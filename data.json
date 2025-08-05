@@ -1,0 +1,60 @@
+{
+  "aiServices": {
+    "openai": {
+      "apiKey": "YOUR_OPENAI_API_KEY_HERE",
+      "baseURL": "https://api.openai.com/v1",
+      "model": "gpt-4"
+    },
+    "ollama": {
+      "baseURL": "http://localhost:11434",
+      "model": "llama2"
+    },
+    "openaiConnections": [
+      {
+        "id": "example-openai",
+        "name": "OpenAI Example",
+        "apiKey": "YOUR_API_KEY_HERE", 
+        "baseURL": "https://api.openai.com/v1",
+        "models": [
+          "gpt-4",
+          "gpt-3.5-turbo"
+        ],
+        "isDefault": true
+      }
+    ]
+  },
+  "summaryTypes": {
+    "month": {
+      "service": "openai:gpt-4",
+      "maxTokens": 4000,
+      "systemPrompt": "你是一个专业的日记整理助手...",
+      "outputDir": "记录/总结/月报",
+      "enabled": true
+    },
+    "week": {
+      "service": "openai",
+      "maxTokens": 2000,
+      "systemPrompt": "你是一个专业的日记整理助手...",
+      "outputDir": "记录/总结/周报",
+      "enabled": true
+    },
+    "quarter": {
+      "service": "openai",
+      "maxTokens": 6000,
+      "systemPrompt": "你是一个专业的日记整理助手...",
+      "outputDir": "记录/总结/季报",
+      "enabled": false
+    },
+    "year": {
+      "service": "openai",
+      "maxTokens": 8000,
+      "systemPrompt": "你是一个专业的日记整理助手...",
+      "outputDir": "记录/总结/年报",
+      "enabled": false
+    }
+  },
+  "diaryConfig": {
+    "diaryRoot": "记录/日记",
+    "outputDir": "记录/diary_summaries"
+  }
+}
