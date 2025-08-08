@@ -1,4 +1,5 @@
 import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
+import { FolderSuggest } from './components/FolderSuggest';
 import DiarySummariesPlugin from './main';
 import { DiaryOrganizerSettings, OpenAIConnection } from './types';
 import { OpenAIConnectionModal } from './components/OpenAIConnectionModal';
@@ -510,31 +511,41 @@ export class DiaryOrganizerSettingTab extends PluginSettingTab {
 				}));
 
 		// 保存目录
-		new Setting(containerEl)
-			.setName('保存的目录')
-			.setDesc(options.outputDirDesc)
-			.addText(text => text
-				.setPlaceholder(options.outputDirPlaceholder)
-				.setValue(config.outputDir)
-				.onChange(async (value) => {
-					this.plugin.settings.summaryTypes[type].outputDir = value;
-					await this.plugin.saveSettings();
-				}));
+        new Setting(containerEl)
+            .setName('保存的目录')
+            .setDesc(options.outputDirDesc)
+            .addText(text => {
+                text
+                  .setPlaceholder(options.outputDirPlaceholder)
+                  .setValue(config.outputDir)
+                  .onChange(async (value) => {
+                      this.plugin.settings.summaryTypes[type].outputDir = value;
+                      await this.plugin.saveSettings();
+                  });
+                // 绑定目录联想
+                // @ts-ignore - Obsidian 的 TextComponent 有 inputEl 属性
+                new FolderSuggest(this.app, text.inputEl);
+            });
 	}
 
 	addDiaryConfigSettings(containerEl: HTMLElement) {
 		containerEl.createEl('h3', { text: '日记读取配置' });
 
-		new Setting(containerEl)
-			.setName('日记根目录')
-			.setDesc('日记文件的根目录路径')
-			.addText(text => text
-				.setPlaceholder('记录/日记')
-				.setValue(this.plugin.settings.diaryConfig.diaryRoot)
-				.onChange(async (value) => {
-					this.plugin.settings.diaryConfig.diaryRoot = value;
-					await this.plugin.saveSettings();
-				}));
+        new Setting(containerEl)
+            .setName('日记根目录')
+            .setDesc('日记文件的根目录路径')
+            .addText(text => {
+                text
+                  .setPlaceholder('记录/日记')
+                  .setValue(this.plugin.settings.diaryConfig.diaryRoot)
+                  .onChange(async (value) => {
+                      this.plugin.settings.diaryConfig.diaryRoot = value;
+                      await this.plugin.saveSettings();
+                  });
+                // 绑定目录联想
+                // @ts-ignore - Obsidian 的 TextComponent 有 inputEl 属性
+                new FolderSuggest(this.app, text.inputEl);
+            });
 	}
 
 	private openSystemPromptModal(type: 'week' | 'month' | 'quarter' | 'year', typeDisplayName: string) {
