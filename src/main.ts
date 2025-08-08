@@ -143,6 +143,357 @@ class YearMonthSelectionModal extends Modal {
 	}
 }
 
+// 年份月份选择（用于周报）
+class WeekSelectionModal extends Modal {
+    private plugin: DiarySummariesPlugin;
+    private selectedYear: string = '';
+    private selectedMonth: string = '';
+    private selectedWeek: string = '';
+    private forceOverwrite: boolean = false;
+    private availableYears: string[] = [];
+    private availableMonths: { [year: string]: string[] } = {};
+    private availableData: DiaryData | null = null;
+
+    constructor(plugin: DiarySummariesPlugin) {
+        super(plugin.app);
+        this.plugin = plugin;
+    }
+
+    async onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl('h2', { text: '选择要处理的年/月/周（周报）' });
+
+        await this.scanAvailableData();
+
+        // 年份选择
+        const yearSetting = new Setting(contentEl)
+            .setName('选择年份')
+            .setDesc('选择要处理的年份')
+            .addDropdown(dropdown => {
+                dropdown.addOption('', '全部年份');
+                this.availableYears.forEach(year => {
+                    dropdown.addOption(year, year);
+                });
+                dropdown.setValue(this.selectedYear);
+                dropdown.onChange(async (value) => {
+                    this.selectedYear = value;
+                    this.selectedMonth = '';
+                    this.selectedWeek = '';
+                    await this.updateMonthDropdown(monthSetting);
+                    await this.updateWeekDropdown(weekSetting);
+                });
+            });
+
+        // 月份选择
+        const monthSetting = new Setting(contentEl)
+            .setName('选择月份')
+            .setDesc('选择要处理的月份（可选）')
+            .addDropdown(dropdown => {
+                dropdown.addOption('', '全部月份');
+                dropdown.setValue(this.selectedMonth);
+                dropdown.onChange(async (value) => {
+                    this.selectedMonth = value;
+                    this.selectedWeek = '';
+                    await this.updateWeekDropdown(weekSetting);
+                });
+            });
+
+        // 周选择
+        const weekSetting = new Setting(contentEl)
+            .setName('选择周')
+            .setDesc('选择要处理的周（需先选择具体月份，可选）')
+            .addDropdown(dropdown => {
+                dropdown.addOption('', '全部周');
+                dropdown.setValue(this.selectedWeek);
+                dropdown.onChange((value) => {
+                    this.selectedWeek = value;
+                });
+            });
+
+        // 强制执行选项
+        new Setting(contentEl)
+            .setName('强制执行')
+            .setDesc('覆盖已存在的汇总文件')
+            .addToggle(toggle => toggle
+                .setValue(this.forceOverwrite)
+                .onChange((value) => {
+                    this.forceOverwrite = value;
+                }));
+
+        await this.updateMonthDropdown(monthSetting);
+        await this.updateWeekDropdown(weekSetting);
+
+        // 按钮
+        const buttonContainer = contentEl.createEl('div', { cls: 'setting-item-control' });
+        buttonContainer.createEl('button', {
+            text: '开始处理',
+            cls: 'mod-cta'
+        }).addEventListener('click', async () => {
+            await this.startProcessing();
+            this.close();
+        });
+        buttonContainer.createEl('button', {
+            text: '取消',
+            cls: 'mod-warning'
+        }).addEventListener('click', () => {
+            this.close();
+        });
+    }
+
+    private async scanAvailableData() {
+        try {
+            const scanResult = await this.plugin.organizer.scanDiaries();
+            if (scanResult.success && scanResult.data) {
+                this.availableData = scanResult.data;
+                this.availableYears = Object.keys(scanResult.data);
+                for (const [year, yearData] of Object.entries(scanResult.data)) {
+                    const yearDataTyped = yearData as { months: { [key: string]: any[] } };
+                    this.availableMonths[year] = Object.keys(yearDataTyped.months).filter(month =>
+                        yearDataTyped.months[month].length > 0
+                    );
+                }
+            }
+        } catch (error) {
+            console.error('扫描可用数据失败:', error);
+        }
+    }
+
+    private async updateMonthDropdown(monthSetting: Setting) {
+        const monthDropdown = monthSetting.controlEl.querySelector('select') as HTMLSelectElement;
+        if (monthDropdown) {
+            monthDropdown.innerHTML = '';
+            monthDropdown.createEl('option', { value: '', text: '全部月份' });
+            if (this.selectedYear && this.availableMonths[this.selectedYear]) {
+                this.availableMonths[this.selectedYear].forEach(month => {
+                    monthDropdown.createEl('option', { value: month, text: month });
+                });
+            }
+        }
+    }
+
+    private async updateWeekDropdown(weekSetting: Setting) {
+        const weekDropdown = weekSetting.controlEl.querySelector('select') as HTMLSelectElement;
+        if (!weekDropdown) return;
+        weekDropdown.innerHTML = '';
+        weekDropdown.createEl('option', { value: '', text: '全部周' });
+
+        if (!this.selectedYear || !this.selectedMonth || !this.availableData) {
+            return;
+        }
+
+        const months = this.availableData[this.selectedYear]?.months || {};
+        const diaries = months[this.selectedMonth] || [];
+        if (diaries.length === 0) return;
+
+        const weekKeys = Array.from(new Set(diaries.map(d => this.getWeekKey(d.date)))).sort();
+        weekKeys.forEach(weekKey => {
+            weekDropdown.createEl('option', { value: weekKey, text: weekKey });
+        });
+    }
+
+    // 与核心逻辑保持一致的周键计算
+    private getWeekKey(date: Date): string {
+        const startOfWeek = new Date(date);
+        startOfWeek.setDate(date.getDate() - date.getDay());
+        return `${startOfWeek.getFullYear()}-${startOfWeek.getMonth() + 1}-${startOfWeek.getDate()}`;
+    }
+
+    private async startProcessing() {
+        const options: any = {};
+        if (this.selectedYear) options.year = this.selectedYear;
+        if (this.selectedMonth) options.month = this.selectedMonth;
+        if (this.selectedWeek) options.week = this.selectedWeek;
+        if (this.forceOverwrite) options.force = true;
+        await this.plugin.processWeekSummariesWithOptions(options);
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+// 年份季度选择（用于季报）
+class YearQuarterSelectionModal extends Modal {
+    private plugin: DiarySummariesPlugin;
+    private selectedYear: string = '';
+    private selectedQuarter: string = '';
+    private forceOverwrite: boolean = false;
+    private availableYears: string[] = [];
+    private availableQuarters: { [year: string]: string[] } = {};
+
+    constructor(plugin: DiarySummariesPlugin) {
+        super(plugin.app);
+        this.plugin = plugin;
+    }
+
+    async onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl('h2', { text: '选择要处理的年份和季度' });
+
+        await this.scanAvailableData();
+
+        // 年份
+        const yearSetting = new Setting(contentEl)
+            .setName('选择年份')
+            .setDesc('选择要处理的年份')
+            .addDropdown(dropdown => {
+                dropdown.addOption('', '全部年份');
+                this.availableYears.forEach(year => dropdown.addOption(year, year));
+                dropdown.setValue(this.selectedYear);
+                dropdown.onChange(async (value) => {
+                    this.selectedYear = value;
+                    this.selectedQuarter = '';
+                    await this.updateQuarterDropdown(quarterSetting);
+                });
+            });
+
+        // 季度
+        const quarterSetting = new Setting(contentEl)
+            .setName('选择季度')
+            .setDesc('选择要处理的季度（可选）')
+            .addDropdown(dropdown => {
+                dropdown.addOption('', '全部季度');
+                dropdown.setValue(this.selectedQuarter);
+                dropdown.onChange((value) => {
+                    this.selectedQuarter = value;
+                });
+            });
+
+        // 强制执行
+        new Setting(contentEl)
+            .setName('强制执行')
+            .setDesc('覆盖已存在的汇总文件')
+            .addToggle(toggle => toggle
+                .setValue(this.forceOverwrite)
+                .onChange((value) => this.forceOverwrite = value));
+
+        await this.updateQuarterDropdown(quarterSetting);
+
+        // 按钮
+        const buttonContainer = contentEl.createEl('div', { cls: 'setting-item-control' });
+        buttonContainer.createEl('button', { text: '开始处理', cls: 'mod-cta' })
+            .addEventListener('click', async () => { await this.startProcessing(); this.close(); });
+        buttonContainer.createEl('button', { text: '取消', cls: 'mod-warning' })
+            .addEventListener('click', () => this.close());
+    }
+
+    private async scanAvailableData() {
+        try {
+            const scanResult = await this.plugin.organizer.scanDiaries();
+            if (scanResult.success && scanResult.data) {
+                this.availableYears = Object.keys(scanResult.data);
+                for (const [year, yearData] of Object.entries(scanResult.data)) {
+                    const months = Object.keys((yearData as any).months).filter(m => (yearData as any).months[m].length > 0);
+                    const quarters = new Set<string>();
+                    months.forEach(m => {
+                        const num = parseInt(m, 10);
+                        if (num >= 1 && num <= 3) quarters.add('1');
+                        else if (num >= 4 && num <= 6) quarters.add('2');
+                        else if (num >= 7 && num <= 9) quarters.add('3');
+                        else quarters.add('4');
+                    });
+                    this.availableQuarters[year] = Array.from(quarters).sort();
+                }
+            }
+        } catch (error) {
+            console.error('扫描可用数据失败:', error);
+        }
+    }
+
+    private async updateQuarterDropdown(quarterSetting: Setting) {
+        const quarterDropdown = quarterSetting.controlEl.querySelector('select') as HTMLSelectElement;
+        if (quarterDropdown) {
+            quarterDropdown.innerHTML = '';
+            quarterDropdown.createEl('option', { value: '', text: '全部季度' });
+            if (this.selectedYear && this.availableQuarters[this.selectedYear]) {
+                this.availableQuarters[this.selectedYear].forEach(q => {
+                    quarterDropdown.createEl('option', { value: q, text: `Q${q}` });
+                });
+            }
+        }
+    }
+
+    private async startProcessing() {
+        const options: any = {};
+        if (this.selectedYear) options.year = this.selectedYear;
+        if (this.selectedQuarter) options.quarter = this.selectedQuarter;
+        if (this.forceOverwrite) options.force = true;
+        await this.plugin.processQuarterSummariesWithOptions(options);
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+// 年份选择（用于年报）
+class YearSelectionModal extends Modal {
+    private plugin: DiarySummariesPlugin;
+    private selectedYear: string = '';
+    private forceOverwrite: boolean = false;
+    private availableYears: string[] = [];
+
+    constructor(plugin: DiarySummariesPlugin) {
+        super(plugin.app);
+        this.plugin = plugin;
+    }
+
+    async onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl('h2', { text: '选择要处理的年份（年报）' });
+
+        await this.scanAvailableData();
+
+        new Setting(contentEl)
+            .setName('选择年份')
+            .setDesc('选择要处理的年份（可选）')
+            .addDropdown(dropdown => {
+                dropdown.addOption('', '全部年份');
+                this.availableYears.forEach(year => dropdown.addOption(year, year));
+                dropdown.setValue(this.selectedYear);
+                dropdown.onChange((value) => this.selectedYear = value);
+            });
+
+        new Setting(contentEl)
+            .setName('强制执行')
+            .setDesc('覆盖已存在的汇总文件')
+            .addToggle(toggle => toggle
+                .setValue(this.forceOverwrite)
+                .onChange((value) => this.forceOverwrite = value));
+
+        const buttonContainer = contentEl.createEl('div', { cls: 'setting-item-control' });
+        buttonContainer.createEl('button', { text: '开始处理', cls: 'mod-cta' })
+            .addEventListener('click', async () => { await this.startProcessing(); this.close(); });
+        buttonContainer.createEl('button', { text: '取消', cls: 'mod-warning' })
+            .addEventListener('click', () => this.close());
+    }
+
+    private async scanAvailableData() {
+        try {
+            const scanResult = await this.plugin.organizer.scanDiaries();
+            if (scanResult.success && scanResult.data) {
+                this.availableYears = Object.keys(scanResult.data);
+            }
+        } catch (error) {
+            console.error('扫描可用数据失败:', error);
+        }
+    }
+
+    private async startProcessing() {
+        const options: any = {};
+        if (this.selectedYear) options.year = this.selectedYear;
+        if (this.forceOverwrite) options.force = true;
+        await this.plugin.processYearSummariesWithOptions(options);
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
 export default class DiarySummariesPlugin extends Plugin {
 	settings: DiaryOrganizerSettings;
 	organizer: DiaryOrganizer;
@@ -291,6 +642,15 @@ export default class DiarySummariesPlugin extends Plugin {
 			}
 		});
 
+		// 处理周报汇总命令（带选择）
+		this.addCommand({
+			id: 'process-week-summaries-with-selection',
+			name: '处理周报汇总（选择年/月/周）',
+			callback: async () => {
+				new WeekSelectionModal(this).open();
+			}
+		});
+
 		// 处理月度汇总命令（带选择）
 		this.addCommand({
 			id: 'process-month-summaries-with-selection',
@@ -309,7 +669,7 @@ export default class DiarySummariesPlugin extends Plugin {
 			}
 		});
 
-		// 处理季度汇总命令
+		// 处理季度汇总命令（全部）
 		this.addCommand({
 			id: 'process-quarter-summaries',
 			name: '处理季度汇总（全部）',
@@ -318,12 +678,30 @@ export default class DiarySummariesPlugin extends Plugin {
 			}
 		});
 
-		// 处理年度汇总命令
+		// 处理季度汇总命令（带选择）
+		this.addCommand({
+			id: 'process-quarter-summaries-with-selection',
+			name: '处理季度汇总（选择年份季度）',
+			callback: async () => {
+				new YearQuarterSelectionModal(this).open();
+			}
+		});
+
+		// 处理年度汇总命令（全部）
 		this.addCommand({
 			id: 'process-year-summaries',
 			name: '处理年度汇总（全部）',
 			callback: async () => {
 				await this.processYearSummaries();
+			}
+		});
+
+		// 处理年度汇总命令（带选择）
+		this.addCommand({
+			id: 'process-year-summaries-with-selection',
+			name: '处理年度汇总（选择年份）',
+			callback: async () => {
+				new YearSelectionModal(this).open();
 			}
 		});
 
@@ -335,6 +713,83 @@ export default class DiarySummariesPlugin extends Plugin {
 				await this.processAllSummaries();
 			}
 		});
+
+		// 快捷：强制生成本周周报
+		this.addCommand({
+			id: 'force-generate-this-week-summary',
+			name: '强制生成本周周报汇总',
+			callback: async () => {
+				const now = new Date();
+				const options: any = {
+					year: `${now.getFullYear()}`,
+					month: this.getMonthLabel(now),
+					week: this.getWeekKey(now),
+					force: true,
+				};
+				await this.processWeekSummariesWithOptions(options);
+			}
+		});
+
+		// 快捷：强制生成本月月度汇总
+		this.addCommand({
+			id: 'force-generate-this-month-summary',
+			name: '强制生成本月月度汇总',
+			callback: async () => {
+				const now = new Date();
+				const options: any = {
+					year: `${now.getFullYear()}`,
+					month: this.getMonthLabel(now),
+					force: true,
+				};
+				await this.processMonthSummariesWithOptions(options);
+			}
+		});
+
+		// 快捷：强制生成本季度季度汇总
+		this.addCommand({
+			id: 'force-generate-this-quarter-summary',
+			name: '强制生成本季度季度汇总',
+			callback: async () => {
+				const now = new Date();
+				const options: any = {
+					year: `${now.getFullYear()}`,
+					quarter: this.getQuarter(now),
+					force: true,
+				};
+				await this.processQuarterSummariesWithOptions(options);
+			}
+		});
+
+		// 快捷：强制生成本年度年度汇总
+		this.addCommand({
+			id: 'force-generate-this-year-summary',
+			name: '强制生成本年度年度汇总',
+			callback: async () => {
+				const now = new Date();
+				const options: any = {
+					year: `${now.getFullYear()}`,
+					force: true,
+				};
+				await this.processYearSummariesWithOptions(options);
+			}
+		});
+	}
+
+	// 辅助：按扫描/处理逻辑一致的键格式
+	private getWeekKey(date: Date): string {
+		const startOfWeek = new Date(date);
+		startOfWeek.setDate(date.getDate() - date.getDay());
+		return `${startOfWeek.getFullYear()}-${startOfWeek.getMonth() + 1}-${startOfWeek.getDate()}`;
+	}
+
+	private getMonthLabel(date: Date): string {
+		const m = date.getMonth() + 1;
+		return `${m.toString().padStart(2, '0')}月`;
+	}
+
+	private getQuarter(date: Date): string {
+		const m = date.getMonth() + 1;
+		return `${Math.floor((m - 1) / 3) + 1}`;
 	}
 
 	async processMonthSummariesWithOptions(options: any = {}) {
@@ -381,6 +836,122 @@ export default class DiarySummariesPlugin extends Plugin {
 		}
 	}
 
+	async processWeekSummariesWithOptions(options: any = {}) {
+		try {
+			const yearText = options.year ? ` ${options.year}年` : '';
+			const monthText = options.month ? ` ${options.month}` : '';
+			const weekText = options.week ? ` 第${options.week}周` : '';
+			const forceText = options.force ? '（强制执行）' : '';
+			const targetText = (yearText + monthText + weekText).trim() || '全部';
+
+			new Notice(`🔄 开始处理${targetText}周报汇总${forceText}...`);
+			this.updateStatusBar('🔄 扫描日记中...');
+
+			const scanResult = await this.organizer.scanDiaries();
+			if (!scanResult.success) {
+				new Notice(`❌ 扫描失败: ${scanResult.error}`);
+				this.updateStatusBar('❌ 扫描失败');
+				return;
+			}
+
+			const totalYears = Object.keys(scanResult.data || {}).length;
+			new Notice(`📊 扫描完成，发现 ${totalYears} 年的日记`);
+			this.updateStatusBar(`📊 发现 ${totalYears} 年日记`);
+
+			await this.organizer.processWeekSummaries({
+				...options,
+				onProgress: (message: string) => {
+					new Notice(`🔄 ${message}`);
+					this.updateStatusBar(`🔄 ${message}`);
+				},
+				onComplete: (summary: string) => {
+					new Notice(`✅ ${targetText}周报汇总处理完成！`);
+					this.updateStatusBar('✅ 汇总完成');
+				}
+			});
+		} catch (error) {
+			console.error('处理周报汇总时出错:', error);
+			new Notice(`❌ 处理失败: ${error.message}`);
+			this.updateStatusBar('❌ 处理失败');
+		}
+	}
+
+	async processQuarterSummariesWithOptions(options: any = {}) {
+		try {
+			const yearText = options.year ? ` ${options.year}年` : '';
+			const quarterText = options.quarter ? ` Q${options.quarter}` : '';
+			const forceText = options.force ? '（强制执行）' : '';
+			const targetText = yearText + quarterText || '全部';
+
+			new Notice(`🔄 开始处理${targetText}季度汇总${forceText}...`);
+			this.updateStatusBar('🔄 扫描日记中...');
+
+			const scanResult = await this.organizer.scanDiaries();
+			if (!scanResult.success) {
+				new Notice(`❌ 扫描失败: ${scanResult.error}`);
+				this.updateStatusBar('❌ 扫描失败');
+				return;
+			}
+
+			const totalYears = Object.keys(scanResult.data || {}).length;
+			new Notice(`📊 扫描完成，发现 ${totalYears} 年的日记`);
+			this.updateStatusBar(`📊 发现 ${totalYears} 年日记`);
+
+			await this.organizer.processQuarterSummaries({
+				...options,
+				onProgress: (message: string) => {
+					new Notice(`🔄 ${message}`);
+					this.updateStatusBar(`🔄 ${message}`);
+				},
+				onComplete: (summary: string) => {
+					new Notice(`✅ ${targetText}季度汇总处理完成！`);
+					this.updateStatusBar('✅ 汇总完成');
+				}
+			});
+		} catch (error) {
+			console.error('处理季度汇总时出错:', error);
+			new Notice(`❌ 处理失败: ${error.message}`);
+			this.updateStatusBar('❌ 处理失败');
+		}
+	}
+
+	async processYearSummariesWithOptions(options: any = {}) {
+		try {
+			const yearText = options.year ? ` ${options.year}年` : '';
+			const forceText = options.force ? '（强制执行）' : '';
+			const targetText = yearText || '全部';
+
+			new Notice(`🔄 开始处理${targetText}年度汇总${forceText}...`);
+			this.updateStatusBar('🔄 扫描日记中...');
+
+			const scanResult = await this.organizer.scanDiaries();
+			if (!scanResult.success) {
+				new Notice(`❌ 扫描失败: ${scanResult.error}`);
+				this.updateStatusBar('❌ 扫描失败');
+				return;
+			}
+
+			const totalYears = Object.keys(scanResult.data || {}).length;
+			new Notice(`📊 扫描完成，发现 ${totalYears} 年的日记`);
+			this.updateStatusBar(`📊 发现 ${totalYears} 年日记`);
+
+			await this.organizer.processYearSummaries({
+				...options,
+				onProgress: (message: string) => {
+					new Notice(`🔄 ${message}`);
+					this.updateStatusBar(`🔄 ${message}`);
+				},
+				onComplete: (summary: string) => {
+					new Notice(`✅ ${targetText}年度汇总处理完成！`);
+					this.updateStatusBar('✅ 汇总完成');
+				}
+			});
+		} catch (error) {
+			console.error('处理年度汇总时出错:', error);
+			new Notice(`❌ 处理失败: ${error.message}`);
+			this.updateStatusBar('❌ 处理失败');
+		}
+	}
 	async processWeekSummaries() {
 		try {
 			new Notice('🔄 开始处理周报汇总...');

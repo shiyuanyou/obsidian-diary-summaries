@@ -58,7 +58,7 @@ export class DiaryOrganizer {
 			let processedCount = 0;
 			let totalCount = 0;
 
-			// 计算总数量
+			// 计算总数量（按周统计，若选择具体周则只计该周）
 			for (const [year, yearData] of Object.entries(data)) {
 				if (options.year && year !== options.year) {
 					continue;
@@ -67,8 +67,16 @@ export class DiaryOrganizer {
 					if (options.month && month !== options.month) {
 						continue;
 					}
-					if (diaries.length > 0) {
-						totalCount++;
+					if (diaries.length === 0) {
+						continue;
+					}
+					const weeklyGroups = this.groupDiariesByWeek(diaries);
+					if (options.week) {
+						if (weeklyGroups[options.week]) {
+							totalCount += 1;
+						}
+					} else {
+						totalCount += Object.keys(weeklyGroups).length;
 					}
 				}
 			}
@@ -92,6 +100,9 @@ export class DiaryOrganizer {
 					const weeklyGroups = this.groupDiariesByWeek(diaries);
 					
 					for (const [weekKey, weekDiaries] of Object.entries(weeklyGroups)) {
+						if (options.week && weekKey !== options.week) {
+							continue;
+						}
 						// 检查是否已存在汇总文件
 						const summaryPath = `${outputDir}/${year}年/${month}_W${weekKey}_汇总.md`;
 						const existingFile = this.app.vault.getAbstractFileByPath(summaryPath);
