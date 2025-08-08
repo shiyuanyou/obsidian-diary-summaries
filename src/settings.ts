@@ -167,8 +167,10 @@ export class DiaryOrganizerSettingTab extends PluginSettingTab {
 			connections.push(connection);
 		}
 
-		this.plugin.settings.aiServices.openaiConnections = connections;
-		await this.plugin.saveSettings();
+    this.plugin.settings.aiServices.openaiConnections = connections;
+    // 连接变化后，规范化四种汇总的服务选择，避免指向失效选项
+    this.normalizeServiceSelections();
+    await this.plugin.saveSettings();
 		
 		new Notice(`连接 "${connection.name}" 已保存`);
 		if (this.openaiContainer) {
@@ -203,7 +205,9 @@ export class DiaryOrganizerSettingTab extends PluginSettingTab {
 			this.plugin.settings.aiServices.openaiConnections[0].isDefault = true;
 		}
 
-		await this.plugin.saveSettings();
+    // 连接删除后，规范化四种汇总的服务选择
+    this.normalizeServiceSelections();
+    await this.plugin.saveSettings();
 		
 		new Notice(`连接 "${connectionToDelete.name}" 已删除`);
 		if (this.openaiContainer) {
@@ -211,6 +215,18 @@ export class DiaryOrganizerSettingTab extends PluginSettingTab {
 		}
 		// 刷新整个设置页面以更新服务下拉框选项
 		this.display();
+	}
+
+	// 确保四种汇总类型的 service 值均指向当前可选项；若无效则回退到第一个可用选项
+	private normalizeServiceSelections() {
+		const options = this.getAvailableServiceOptions().map(opt => opt.value);
+		const types: Array<'week' | 'month' | 'quarter' | 'year'> = ['week', 'month', 'quarter', 'year'];
+		types.forEach(type => {
+			const current = this.plugin.settings.summaryTypes[type].service;
+			if (!options.includes(current) && options.length > 0) {
+				this.plugin.settings.summaryTypes[type].service = options[0];
+			}
+		});
 	}
 
 	private getAvailableServiceOptions(): Array<{value: string, display: string}> {
@@ -269,6 +285,11 @@ export class DiaryOrganizerSettingTab extends PluginSettingTab {
 				const valueToSet = valueExists ? currentValue : serviceOptions[0]?.value || '';
 				
 				dropdown.setValue(valueToSet);
+				// 如果当前存储值无效，立刻写回并保存，避免显示与实际使用不一致
+				if (!valueExists && valueToSet) {
+					// 立即持久化回设置（调用外部传入的 onChange）
+					onChange(valueToSet);
+				}
 				dropdown.onChange(onChange);
 			});
 	}

@@ -28,6 +28,16 @@ export class AIClient {
 					model: modelId
 				};
 			} else {
+				// 回退：使用默认连接 + 其第一个模型，避免因为连接被重命名/删除导致配置不可用
+				const fallback = this.settings.aiServices.openaiConnections?.find(c => c.isDefault) 
+					|| this.settings.aiServices.openaiConnections?.[0];
+				if (fallback) {
+					return {
+						type: 'openai',
+						connection: fallback,
+						model: fallback.models[0] || this.settings.aiServices.openai.model
+					};
+				}
 				throw new Error(`找不到连接: ${connectionName}`);
 			}
 		}
@@ -43,6 +53,7 @@ export class AIClient {
 				return {
 					type: 'openai',
 					connection: defaultConnection,
+					// 始终使用连接列表中当前的第一个模型，避免继续使用旧模型
 					model: defaultConnection.models[0] || this.settings.aiServices.openai.model
 				};
 			} else {
